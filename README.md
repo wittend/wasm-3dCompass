@@ -10,6 +10,8 @@ transparent bubble marks the full-scale range of each component.
 - **Harness:** plain HTML, CSS and JavaScript, with a menu bar, toolbar and control panel.
   Rendering uses Canvas 2D.
 
+![The 3-Axis Field Compass harness showing the bubble, component arrows, compass rose and true-north arrow](docs/images/harness.png)
+
 ## Features
 
 - Live update from Bx, By and Bz (sliders or numeric entry).
