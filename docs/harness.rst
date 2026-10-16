@@ -36,6 +36,7 @@ The toolbar repeats the most-used actions and adds one toggle per layer:
 * **Extents**: dashed lines from the resultant tip to the coordinate planes.
 * **Full-scale axes**: the faint ±R axis lines.
 * **Labels**: Bx, By, Bz and \|B\| values at the arrow tips.
+* **Compass rose**: the translucent rose in the XY plane, with N, E, S and W marks.
 
 Control panel
 -------------
@@ -44,7 +45,26 @@ Measured field (nT)
    Bx, By and Bz, each as a slider and a number box. The sliders run from
    −range to +range. *Full scale* sets the range and the bubble radius.
 
+Compass rose
+   * **Show rose (XY plane)**: turns the rose on or off. The same toggle is
+     in the toolbar.
+   * **Declination**: magnetic declination in degrees, positive east, from
+     −180 to +180. Enter it as a number, drag the slider, or click **0°** to
+     reset. The rose turns so that its N mark points to true north in the
+     sensor's XY plane.
+   * **Red arrow to true north**: a fixed red arrow from the centre to the
+     true-north direction. It has its own toggle, also in the toolbar, so it
+     can be hidden on its own.
+   * **True north**: the bearing of true north from the sensor's +X axis,
+     measured towards +Y, so that a value of −30° means true north is 30°
+     clockwise from +X.
+
+   Magnetic north is taken as the direction of the horizontal field, so the
+   rose follows the field. If the horizontal field is below 1 nT, +X is used
+   as the magnetic reference instead.
+
 Appearance
+   * **Compass rose**: the colour of the rose face and rim.
    * **Foreground**: the component arrows and labels.
    * **Resultant arrow**: the total-field arrow.
    * **Bubble**: the bubble wire and fill.

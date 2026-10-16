@@ -28,6 +28,12 @@ Extent lines
 Full-scale axes
    Faint dashed lines from -R to +R along each axis, marking the range.
 
+Compass rose
+   A translucent rose lying in the XY plane at the bubble's equator, with N,
+   E, S and W marks and ticks every 10°. A *declination* input turns it so its
+   N mark points to true north in the sensor's frame. It can be hidden with
+   the **Compass rose** toggle.
+
 Readout
    \|B\| in nT and µT, elevation (angle above the XY plane) and azimuth
    (angle in the XY plane, from +X towards +Y), in degrees.

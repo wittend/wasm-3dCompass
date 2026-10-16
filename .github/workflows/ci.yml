@@ -23,7 +23,7 @@ jobs:
         run: |
           set -e
           f=target/wasm32-unknown-unknown/release/wasm_3dcompass.wasm
-          for sym in set_field set_range set_view set_flags build ops_ptr readout; do
+          for sym in set_field set_range set_declination set_view set_flags build ops_ptr readout; do
             grep -q "$sym" "$f" || { echo "missing export: $sym"; exit 1; }
           done
 

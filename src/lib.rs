@@ -33,7 +33,10 @@ const S_BUB_FILL: f32 = 4.0;
 const S_BUB_WIRE: f32 = 5.0;
 const S_EXTENT: f32 = 6.0;
 const S_GHOST: f32 = 7.0;
-const S_LABEL_BASE: f32 = 8.0; // 8=X, 9=Y, 10=Z, 11=|B|
+const S_LABEL_BASE: f32 = 8.0; // 8=X, 9=Y, 10=Z, 11=|B|, 12..15 = N, E, S, W
+const S_ROSE_FILL: f32 = 16.0;
+const S_ROSE_LINE: f32 = 17.0;
+const S_NORTH: f32 = 18.0; // red arrow to true north
 
 // Visibility flags
 pub const F_ARROWS: u32 = 1 << 0;
@@ -43,6 +46,8 @@ pub const F_BUBBLE_FILL: u32 = 1 << 3;
 pub const F_EXTENTS: u32 = 1 << 4;
 pub const F_GHOST: u32 = 1 << 5;
 pub const F_LABELS: u32 = 1 << 6;
+pub const F_ROSE: u32 = 1 << 7;
+pub const F_NORTH_ARROW: u32 = 1 << 8;
 
 struct State {
     b: [f32; 3],
@@ -51,9 +56,10 @@ struct State {
     pitch: f32,
     zoom: f32,
     flags: u32,
+    decl_deg: f32,
     ops: [[f32; FLOATS]; MAX_OPS],
     n: usize,
-    readout: [f32; 4],
+    readout: [f32; 5],
 }
 
 static mut ST: State = State {
@@ -62,10 +68,11 @@ static mut ST: State = State {
     yaw: 0.6,
     pitch: -0.4,
     zoom: 1.0,
-    flags: 0x7f,
+    flags: 0x1ff,
+    decl_deg: 0.0,
     ops: [[0.0; FLOATS]; MAX_OPS],
     n: 0,
-    readout: [0.0; 4],
+    readout: [0.0; 5],
 };
 
 fn st() -> &'static mut State {
@@ -150,7 +157,20 @@ fn arrow(st: &mut State, scr: &Screen, from: [f32; 3], to: [f32; 3], style: f32)
     );
 }
 
-fn readout_from(b: [f32; 3], range: f32) -> [f32; 4] {
+/// Direction of true north in the sensor's XY plane, as a maths angle (radians)
+/// measured from +X towards +Y.
+///
+/// Magnetic north is taken as the direction of the horizontal field. If the
+/// horizontal field is below 1 nT (no usable reference), +X is used instead.
+/// True north lies `decl_deg` east of magnetic north; east is clockwise seen
+/// from +Z, so true north is the magnetic angle minus the declination.
+fn north_angle(b: [f32; 3], decl_deg: f32) -> f32 {
+    let bh = (b[0] * b[0] + b[1] * b[1]).sqrt();
+    let magnetic = if bh >= 1.0 { b[1].atan2(b[0]) } else { 0.0 };
+    magnetic - decl_deg.to_radians()
+}
+
+fn readout_from(b: [f32; 3], range: f32, decl_deg: f32) -> [f32; 5] {
     let mag = (b[0] * b[0] + b[1] * b[1] + b[2] * b[2]).sqrt();
     let (elev, azim) = if mag > 0.0 {
         ((b[2] / mag).clamp(-1.0, 1.0).asin().to_degrees(), b[1].atan2(b[0]).to_degrees())
@@ -158,7 +178,64 @@ fn readout_from(b: [f32; 3], range: f32) -> [f32; 4] {
         (0.0, 0.0)
     };
     let saturated = if b.iter().any(|c| c.abs() > range) { 1.0 } else { 0.0 };
-    [mag, elev, azim, saturated]
+    let mut north = north_angle(b, decl_deg).to_degrees() % 360.0;
+    if north > 180.0 {
+        north -= 360.0;
+    } else if north < -180.0 {
+        north += 360.0;
+    }
+    [mag, elev, azim, saturated, north]
+}
+
+/// Point on the circle of radius `r` in the XY plane at maths angle `t`.
+fn rim_point(t: f32, r: f32) -> [f32; 3] {
+    [r * t.cos(), r * t.sin(), 0.0]
+}
+
+/// Transparent compass rose lying in the XY plane at the bubble's equator.
+/// Compass bearings run clockwise from true north, so the maths angle of a
+/// bearing `b` is `north - b`.
+fn build_rose(st: &mut State, scr: &Screen, north: f32) {
+    const SEGS: usize = 64;
+    let centre = [0.0f32; 3];
+    let (c, zc) = scr.project(centre);
+
+    // Translucent face: a fan of triangles from the centre.
+    for k in 0..SEGS {
+        let t0 = core::f32::consts::TAU * k as f32 / SEGS as f32;
+        let t1 = core::f32::consts::TAU * (k + 1) as f32 / SEGS as f32;
+        let (p0, z0) = scr.project(rim_point(t0, R));
+        let (p1, z1) = scr.project(rim_point(t1, R));
+        push(st, K_TRI, c, p0, p1, S_ROSE_FILL, (zc + z0 + z1) / 3.0);
+    }
+
+    // Rim.
+    for k in 0..SEGS {
+        let t0 = core::f32::consts::TAU * k as f32 / SEGS as f32;
+        let t1 = core::f32::consts::TAU * (k + 1) as f32 / SEGS as f32;
+        segment(st, scr, rim_point(t0, R), rim_point(t1, R), K_LINE, S_ROSE_LINE);
+    }
+
+    // Ticks every 10 degrees: longest at the cardinals, medium every 30.
+    for i in 0..36 {
+        let bearing = (i as f32) * 10.0_f32.to_radians();
+        let t = north - bearing;
+        let len = if i % 9 == 0 {
+            0.12
+        } else if i % 3 == 0 {
+            0.07
+        } else {
+            0.035
+        };
+        segment(st, scr, rim_point(t, R * (1.0 - len)), rim_point(t, R), K_LINE, S_ROSE_LINE);
+    }
+
+    // N, E, S, W just outside the rim.
+    for (idx, bearing_deg) in [(4.0_f32, 0.0_f32), (5.0, 90.0), (6.0, 180.0), (7.0, 270.0)] {
+        let t = north - bearing_deg.to_radians();
+        let (p, z) = scr.project(rim_point(t, R * 1.16));
+        push(st, K_LABEL, p, [0.0; 2], [0.0; 2], S_LABEL_BASE + idx, z + 1000.0);
+    }
 }
 
 fn build_ops(w: f32, h: f32) -> usize {
@@ -166,6 +243,7 @@ fn build_ops(w: f32, h: f32) -> usize {
     st.n = 0;
     let flags = st.flags;
     let scr = Screen::new(w, h, st.yaw, st.pitch, st.zoom);
+    let north = north_angle(st.b, st.decl_deg);
 
     // Normalised components, clamped to the bubble.
     let mut v = [0.0f32; 3];
@@ -234,6 +312,21 @@ fn build_ops(w: f32, h: f32) -> usize {
         arrow(st, &scr, origin, d, S_RES);
     }
 
+    // Compass rose (in the XY plane, under the arrows).
+    if flags & F_ROSE != 0 {
+        build_rose(st, &scr, north);
+    }
+
+    // Red arrow to true north, just inside the rim. Its depth is pushed
+    // forward so it is not hidden by the translucent rose face.
+    if flags & F_NORTH_ARROW != 0 {
+        let before = st.n;
+        arrow(st, &scr, origin, rim_point(north, R * 0.92), S_NORTH);
+        for i in before..st.n {
+            st.ops[i][8] += 500.0;
+        }
+    }
+
     // Labels (drawn last, nearest).
     if flags & F_LABELS != 0 {
         for i in 0..3 {
@@ -268,14 +361,23 @@ fn build_ops(w: f32, h: f32) -> usize {
 pub extern "C" fn set_field(x: f32, y: f32, z: f32) {
     let st = st();
     st.b = [x, y, z];
-    st.readout = readout_from(st.b, st.range);
+    st.readout = readout_from(st.b, st.range, st.decl_deg);
 }
 
 #[no_mangle]
 pub extern "C" fn set_range(range_nt: f32) {
     let st = st();
     st.range = range_nt.max(1.0);
-    st.readout = readout_from(st.b, st.range);
+    st.readout = readout_from(st.b, st.range, st.decl_deg);
+}
+
+/// Magnetic declination in degrees, positive east. Rotates the compass rose so
+/// that it shows true north in the sensor's XY plane.
+#[no_mangle]
+pub extern "C" fn set_declination(deg: f32) {
+    let st = st();
+    st.decl_deg = deg.clamp(-180.0, 180.0);
+    st.readout = readout_from(st.b, st.range, st.decl_deg);
 }
 
 #[no_mangle]
@@ -303,8 +405,9 @@ pub extern "C" fn ops_ptr() -> *const f32 {
     unsafe { (*addr_of_mut!(ST)).ops.as_ptr() as *const f32 }
 }
 
-/// 0 = |B| nT, 1 = elevation deg, 2 = azimuth deg, 3 = 1 if any component exceeds range.
+/// 0 = |B| nT, 1 = elevation deg, 2 = azimuth deg, 3 = 1 if any component exceeds range,
+/// 4 = true-north angle in the XY plane, deg from +X towards +Y (-180..180].
 #[no_mangle]
 pub extern "C" fn readout(i: u32) -> f32 {
-    st().readout[(i as usize).min(3)]
+    st().readout[(i as usize).min(4)]
 }

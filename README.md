@@ -18,6 +18,7 @@ transparent bubble marks the full-scale range of each component.
 - Bubble transparency control.
 - Point of view: drag to rotate, wheel to zoom, yaw/pitch/zoom sliders, optional spin.
 - Layer toggles for arrows, resultant, bubble wire and fill, extent lines, full-scale axes and labels.
+- Transparent compass rose in the XY plane, with a declination input that turns it to true north.
 - Readout of |B| in nT and µT, elevation and azimuth.
 - PNG export.
 

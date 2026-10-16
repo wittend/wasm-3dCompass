@@ -15,15 +15,24 @@ const state = {
   zoom: DEFAULT_VIEW.zoom,
   spin: false,
   transparency: 0.8,
+  declination: 0,              // degrees, positive east
   fg: '#e8eef7',
   res: '#ffb020',
   bubble: '#4fb3ff',
+  rose: '#9fb4cc',
   bg: '#0b1220',
-  layers: { arrows: true, resultant: true, bubbleWire: true, bubbleFill: true, extents: true, ghost: true, labels: true },
+  layers: { arrows: true, resultant: true, bubbleWire: true, bubbleFill: true, extents: true, ghost: true, labels: true, rose: true, northArrow: true },
 };
 
 // Must match the F_* bits in src/lib.rs
-const LAYER_BITS = { arrows: 1, resultant: 2, bubbleWire: 4, bubbleFill: 8, extents: 16, ghost: 32, labels: 64 };
+const LAYER_BITS = { arrows: 1, resultant: 2, bubbleWire: 4, bubbleFill: 8, extents: 16, ghost: 32, labels: 64, rose: 128, northArrow: 256 };
+
+// Drawing styles from src/lib.rs (S_*). Labels are 8 + index.
+const S_ROSE_FILL = 16;
+const S_ROSE_LINE = 17;
+const S_NORTH = 18;
+const NORTH_RED = '#ff3b3b';
+const LABEL_TEXT = ['Bx', 'By', 'Bz', '|B|', 'N', 'E', 'S', 'W'];
 const AXES = ['x', 'y', 'z'];
 
 let wasm = null;
@@ -58,10 +67,14 @@ function strokeColour(style, opacity) {
   if (style === 5) return rgba(state.bubble, 0.12 + 0.8 * (1 - state.transparency));
   if (style === 6) return rgba(state.fg, 0.55);
   if (style === 7) return rgba(state.fg, 0.25);
+  if (style === S_ROSE_LINE) return rgba(state.rose, 0.25 + 0.6 * (1 - state.transparency));
+  if (style === S_NORTH) return NORTH_RED;
   return rgba(state.fg, opacity);
 }
 
 function fillColour(style) {
+  if (style === S_ROSE_FILL) return rgba(state.rose, 0.04 + 0.2 * (1 - state.transparency));
+  if (style === S_NORTH) return NORTH_RED;
   return style === 3 ? state.res : state.fg;
 }
 
@@ -71,6 +84,7 @@ function drawOps(ops, n) {
     `By ${fmtNT(state.field[1])}`,
     `Bz ${fmtNT(state.field[2])}`,
     `|B| ${fmtNT(wasm.readout(0))}`,
+    'N', 'E', 'S', 'W',
   ];
   ctx.font = '600 12px system-ui, sans-serif';
   ctx.textBaseline = 'middle';
@@ -85,14 +99,14 @@ function drawOps(ops, n) {
 
     if (kind === 0) {                                  // line
       ctx.setLineDash([]);
-      ctx.strokeStyle = style <= 3 ? fillColour(style) : strokeColour(style, 1);
-      ctx.lineWidth = style === 3 ? 3 : style <= 2 ? 2.5 : 1;
+      ctx.strokeStyle = style <= 3 || style === S_NORTH ? fillColour(style) : strokeColour(style, 1);
+      ctx.lineWidth = style === 3 ? 3 : style <= 2 || style === S_NORTH ? 2.5 : 1;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.stroke();
-    } else if (kind === 1) {                           // arrow head
+    } else if (kind === 1) {                           // arrow head or rose face
       ctx.fillStyle = fillColour(style);
       ctx.beginPath();
       ctx.moveTo(x1, y1);
@@ -121,6 +135,8 @@ function drawOps(ops, n) {
     } else if (kind === 4) {                           // label
       ctx.setLineDash([]);
       ctx.fillStyle = state.fg;
+      // Compass points are centred on their anchor; value labels sit beside it.
+      ctx.textAlign = style >= 12 ? 'center' : 'left';
       ctx.fillText(LABELS[style - 8] ?? '', x1, y1);
     }
   }
@@ -143,6 +159,7 @@ function render() {
   wasm.set_range(state.range);
   wasm.set_view(state.yaw, state.pitch, state.zoom);
   wasm.set_flags(flagsValue());
+  wasm.set_declination(state.declination);
   const n = wasm.build(w, h);
   const ops = new Float32Array(wasm.memory.buffer, wasm.ops_ptr(), n * 9);
   drawOps(ops, n);
@@ -158,6 +175,20 @@ function updateReadout() {
   $('elev').textContent = `${wasm.readout(1).toFixed(1)}°`;
   $('azim').textContent = `${wasm.readout(2).toFixed(1)}°`;
   $('warn').style.display = wasm.readout(3) ? 'block' : 'none';
+  $('northAngle').textContent = `${wasm.readout(4).toFixed(1)}° from +X`;
+}
+
+function syncRoseInputs() {
+  $('decl').value = state.declination;
+  $('declSlider').value = state.declination;
+  $('rose').value = state.rose;
+}
+
+function setDeclination(value) {
+  const v = clamp(Number(value) || 0, -180, 180);
+  state.declination = v;
+  syncRoseInputs();
+  requestRender();
 }
 
 // ---------------------------------------------------------------- UI sync
@@ -185,6 +216,7 @@ function syncAppearanceInputs() {
   $('res').value = state.res;
   $('bubble').value = state.bubble;
   $('bg').value = state.bg;
+  syncRoseInputs();
   $('transp').value = Math.round(state.transparency * 100);
   $('transpVal').textContent = `${Math.round(state.transparency * 100)}%`;
   document.querySelectorAll('[data-layer]').forEach((el) => { el.checked = state.layers[el.dataset.layer]; });
@@ -243,6 +275,11 @@ function bindUI() {
   $('res').addEventListener('input', (e) => { state.res = e.target.value; requestRender(); });
   $('bubble').addEventListener('input', (e) => { state.bubble = e.target.value; requestRender(); });
   $('bg').addEventListener('input', (e) => { state.bg = e.target.value; requestRender(); });
+  $('rose').addEventListener('input', (e) => { state.rose = e.target.value; requestRender(); });
+
+  $('decl').addEventListener('change', (e) => setDeclination(e.target.value));
+  $('declSlider').addEventListener('input', (e) => setDeclination(e.target.value));
+  $('declZero').addEventListener('click', () => setDeclination(0));
   $('transp').addEventListener('input', (e) => {
     state.transparency = Number(e.target.value) / 100;
     $('transpVal').textContent = `${e.target.value}%`;

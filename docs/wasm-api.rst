@@ -15,6 +15,11 @@ Exported functions
    Set the full-scale range (nT) for each component. This is also the bubble
    radius. Values below 1 are clamped to 1. Also updates the readout.
 
+``set_declination(deg: f32)``
+   Set the magnetic declination in degrees, positive east, clamped to ±180.
+   It turns the compass rose so its N mark points to true north. Also updates
+   the readout.
+
 ``set_view(yaw: f32, pitch: f32, zoom: f32)``
    Set the point of view. Pitch is clamped to ±1.5 rad and zoom to 0.2–4.
 
@@ -44,9 +49,11 @@ F_BUBBLE_FILL  8      Bubble body
 F_EXTENTS      16     Extent lines
 F_GHOST        32     Full-scale axes
 F_LABELS       64     Value labels
+F_ROSE         128    Compass rose (XY plane)
+F_NORTH_ARROW  256    Red arrow to true north
 =============  =====  ===============================
 
-The default is ``0x7f`` (all layers on).
+The default is ``0x1ff`` (all layers on).
 
 Readout indices
 ---------------
@@ -58,7 +65,12 @@ Index  Value
 1      Elevation in degrees, ``asin(Bz / |B|)``
 2      Azimuth in degrees, ``atan2(By, Bx)``
 3      1.0 if any component exceeds the full-scale range, else 0.0
+4      Direction of true north from +X towards +Y, in degrees, in (-180, 180]
 =====  ==============================================================
+
+Index 4 is ``atan2(By, Bx) - declination``, using the horizontal field as
+magnetic north. With no horizontal field (below 1 nT) it uses +X as the
+magnetic reference.
 
 Drawing list
 ------------
@@ -95,6 +107,13 @@ Style  Meaning
 9      Label: By
 10     Label: Bz
 11     Label: \|B\|
+12     Label: N (compass rose)
+13     Label: E (compass rose)
+14     Label: S (compass rose)
+15     Label: W (compass rose)
+16     Compass rose face (translucent triangle)
+17     Compass rose rim and ticks
+18     Red arrow to true north (fixed red, drawn as a line and a head)
 =====  ====================================================
 
 ``depth`` is the view-space z of the element. Larger values are nearer the
@@ -112,7 +131,8 @@ Example
    wasm.set_field(21000, 0, -41000);   // nT
    wasm.set_range(100000);
    wasm.set_view(0.6, -0.4, 1.0);
-   wasm.set_flags(0x7f);
+   wasm.set_declination(12);           // true north 12° east of magnetic north
+   wasm.set_flags(0x1ff);
 
    const n = wasm.build(800, 600);
    const ops = new Float32Array(wasm.memory.buffer, wasm.ops_ptr(), n * 9);
