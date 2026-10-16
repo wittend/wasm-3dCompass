@@ -1,0 +1,21 @@
+[package]
+name = "wasm_3dcompass"
+version = "0.1.0"
+edition = "2021"
+description = "Geometry engine for a 3-axis magnetic vector visualisation (nT)"
+license = "Apache-2.0"
+authors = ["Dave Witten <wittend@wwrinc.com>"]
+repository = "https://github.com/wittend/wasm-3dCompass"
+homepage = "https://wasm-3dcompass.readthedocs.io/"
+documentation = "https://wasm-3dcompass.readthedocs.io/"
+readme = "README.md"
+keywords = ["wasm", "magnetometer", "visualisation"]
+categories = ["wasm", "science"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

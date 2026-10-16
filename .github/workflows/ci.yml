@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  wasm:
+    name: Build WebAssembly module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust with wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Check exported API
+        run: |
+          set -e
+          f=target/wasm32-unknown-unknown/release/wasm_3dcompass.wasm
+          for sym in set_field set_range set_view set_flags build ops_ptr readout; do
+            grep -q "$sym" "$f" || { echo "missing export: $sym"; exit 1; }
+          done
+
+      - name: Upload module
+        uses: actions/upload-artifact@v4
+        with:
+          name: compass-wasm
+          path: target/wasm32-unknown-unknown/release/wasm_3dcompass.wasm
+
+  docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install documentation dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Build Sphinx HTML (warnings are errors)
+        run: sphinx-build -W -b html docs docs/_build/html
+
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html
